@@ -291,7 +291,7 @@ class QuestDbEngineSpec(BaseEngineSpec, BasicParametersMixin):
         **kwargs: Any,
     ) -> None:
         try:
-            sql = SQLScript(query).format(comments=False)
+            sql = SQLScript(query, cls.engine).format(comments=False)
             cursor.execute(sql)
         except Exception as ex:
             logger.exception(
