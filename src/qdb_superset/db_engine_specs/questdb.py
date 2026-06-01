@@ -73,14 +73,14 @@ class QuestDbEngineSpec(BaseEngineSpec, BasicParametersMixin):
     # https://questdb.io/docs/reference/function/date-time/#date_trunc
     _time_grain_expressions = {
         None: "{col}",
-        "PT1S": "DATE_TRUNC('second', {col})",
-        "PT1M": "DATE_TRUNC('minute', {col})",
-        "PT1H": "DATE_TRUNC('hour', {col})",
-        "P1D": "DATE_TRUNC('day', {col})",
-        "P1W": "DATE_TRUNC('week', {col})",
-        "P1M": "DATE_TRUNC('month', {col})",
-        "P1Y": "DATE_TRUNC('year', {col})",
-        "P3M": "DATE_TRUNC('quarter', {col})",
+        "PT1S": "date_trunc('second', {col})",
+        "PT1M": "date_trunc('minute', {col})",
+        "PT1H": "date_trunc('hour', {col})",
+        "P1D": "date_trunc('day', {col})",
+        "P1W": "date_trunc('week', {col})",
+        "P1M": "date_trunc('month', {col})",
+        "P1Y": "date_trunc('year', {col})",
+        "P3M": "date_trunc('quarter', {col})",
     }
     column_type_mappings = (
         (
