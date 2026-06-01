@@ -291,7 +291,9 @@ class QuestDbEngineSpec(BaseEngineSpec, BasicParametersMixin):
         **kwargs: Any,
     ) -> None:
         try:
-            sql = SQLScript(query, cls.engine).format(comments=False)
+            # Use postgresql dialect since QuestDB speaks postgres wire protocol;
+            # avoids sqlglot uppercasing function names for unknown dialects.
+            sql = SQLScript(query, "postgresql").format(comments=False)
             cursor.execute(sql)
         except Exception as ex:
             logger.exception(
