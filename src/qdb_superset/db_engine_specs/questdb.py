@@ -8,8 +8,7 @@ import questdb_connect.types as qdbc_types
 from flask_babel import gettext as __
 from marshmallow import fields, Schema
 from questdb_connect.common import remove_public_schema
-from sqlalchemy.engine.base import Engine
-from sqlalchemy.engine.reflection import Inspector
+from sqlalchemy.engine.interfaces import Dialect
 from sqlalchemy.sql.expression import text, TextClause
 from sqlalchemy.types import TypeEngine
 import logging
@@ -23,7 +22,7 @@ from superset.db_engine_specs.base import (
     BasicParametersMixin,
     BasicParametersType,
 )
-from superset import sql_parse
+from superset.sql.parse import SQLScript, Table
 from superset.utils import core as utils
 from superset.utils.core import GenericDataType
 
@@ -172,22 +171,12 @@ class QuestDbEngineSpec(BaseEngineSpec, BasicParametersMixin):
 
     @classmethod
     def epoch_to_dttm(cls) -> str:
-        """SQL expression that converts epoch (seconds) to datetime that can be used
-        in a query. The reference column should be denoted as `{col}` in the return
-        expression, e.g. "FROM_UNIXTIME({col})"
-        :return: SQL Expression
-        """
         return "{col} * 1000000"
 
     @classmethod
     def convert_dttm(
         cls, target_type: str, dttm: datetime, db_extra: dict[str, Any] | None = None
     ) -> str | None:
-        """Convert a Python `datetime` object to a SQL expression.
-        :param target_type: The target type of expression
-        :param dttm: The datetime object
-        :return: The SQL expression
-        """
         type_u = target_type.upper()
         if type_u == "DATE":
             return f"TO_DATE('{dttm.date().isoformat()}', 'YYYY-MM-DD')"
@@ -198,10 +187,6 @@ class QuestDbEngineSpec(BaseEngineSpec, BasicParametersMixin):
 
     @classmethod
     def get_datatype(cls, type_code: Any) -> str | None:
-        """Change column type code from cursor description to string representation.
-        :param type_code: Type code from cursor description
-        :return: String representation of type code
-        """
         if isinstance(type_code, str) and type_code:
             return type_code.upper()
         return str(type_code)
@@ -213,12 +198,6 @@ class QuestDbEngineSpec(BaseEngineSpec, BasicParametersMixin):
         db_extra: dict[str, Any] | None = None,
         source: utils.ColumnTypeSource = utils.ColumnTypeSource.GET_TABLE,
     ) -> utils.ColumnSpec | None:
-        """Get generic type related specs regarding a native column type.
-        :param native_type: Native database type
-        :param db_extra: The database extra object
-        :param source: Type coming from the database table or cursor description
-        :return: ColumnSpec object
-        """
         sqla_type = qdbc_types.resolve_type_from_name(native_type)
         if not sqla_type:
             return BaseEngineSpec.get_column_spec(native_type, db_extra, source)
@@ -256,12 +235,6 @@ class QuestDbEngineSpec(BaseEngineSpec, BasicParametersMixin):
         db_extra: dict[str, Any] | None = None,
         source: utils.ColumnTypeSource = utils.ColumnTypeSource.GET_TABLE,
     ) -> TypeEngine | None:
-        """Converts native database type to sqlalchemy column type.
-        :param native_type: Native database type
-        :param db_extra: The database extra object
-        :param source: Type coming from the database table or cursor description
-        :return: ColumnSpec object
-        """
         resolved = qdbc_types.resolve_type_from_name(native_type)
         return resolved.impl if resolved else None
 
@@ -269,32 +242,20 @@ class QuestDbEngineSpec(BaseEngineSpec, BasicParametersMixin):
     def select_star(  # pylint: disable=too-many-arguments
         cls,
         database: Any,
-        table_name: str,
-        engine: Engine,
-        schema: str | None = None,
+        table: Table,
+        dialect: Dialect,
         limit: int = 100,
         show_cols: bool = False,
         indent: bool = True,
         latest_partition: bool = True,
         cols: list[dict[str, Any]] | None = None,
     ) -> str:
-        """Generate a "SELECT * from table_name" query with appropriate limit.
-        :param database: Database instance
-        :param table_name: Table name, unquoted
-        :param engine: SqlAlchemy Engine instance
-        :param schema: Schema, unquoted
-        :param limit: limit to impose on query
-        :param show_cols: Show columns in query; otherwise use "*"
-        :param indent: Add indentation to query
-        :param latest_partition: Only query the latest partition
-        :param cols: Columns to include in query
-        :return: SQL query
-        """
+        # Strip schema so QuestDB doesn't receive public-prefixed table names
+        table = Table(table.table, None, table.catalog)
         return super().select_star(
             database,
-            table_name,
-            engine,
-            None,
+            table,
+            dialect,
             limit,
             show_cols,
             indent,
@@ -310,19 +271,13 @@ class QuestDbEngineSpec(BaseEngineSpec, BasicParametersMixin):
     def get_view_names(
         cls,
         database,
-        inspector: Inspector,
+        inspector: Any,
         schema: str | None,
     ) -> set[str]:
         return set()
 
     @classmethod
     def get_text_clause(cls, clause: str) -> TextClause:
-        """
-        SQLAlchemy wrapper to ensure text clauses are escaped properly
-
-        :param clause: string clause with potentially unescaped characters
-        :return: text clause with escaped characters
-        """
         if cls.allows_escaped_colons:
             clause = clause.replace(":", "\\:")
         return text(remove_public_schema(clause))
@@ -332,19 +287,13 @@ class QuestDbEngineSpec(BaseEngineSpec, BasicParametersMixin):
         cls,
         cursor: Any,
         query: str,
+        database: Any,
         **kwargs: Any,
     ) -> None:
-        """Execute a SQL query
-        :param cursor: Cursor instance
-        :param query: Query to execute
-        :param kwargs: kwargs to be passed to cursor.execute()
-        :return:
-        """
         try:
-            sql = sql_parse.strip_comments_from_sql(query)
+            sql = SQLScript(query).format(comments=False)
             cursor.execute(sql)
         except Exception as ex:
-            # Log the exception with traceback
             logger.exception(
                 "An error occurred, query(%s): %s\nerror: %s", type(query), query, ex
             )
