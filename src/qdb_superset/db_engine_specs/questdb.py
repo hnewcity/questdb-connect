@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
+
+_DATE_TRUNC_RE = re.compile(r"(?i)DATE_TRUNC\('([^']+)'", re.IGNORECASE)
 from typing import Any
 
 import questdb_connect.types as qdbc_types
@@ -291,9 +293,9 @@ class QuestDbEngineSpec(BaseEngineSpec, BasicParametersMixin):
         **kwargs: Any,
     ) -> None:
         try:
-            # Use postgresql dialect since QuestDB speaks postgres wire protocol;
-            # avoids sqlglot uppercasing function names for unknown dialects.
             sql = SQLScript(query, "postgresql").format(comments=False)
+            # QuestDB requires lowercase time units in DATE_TRUNC (e.g. 'day' not 'DAY')
+            sql = _DATE_TRUNC_RE.sub(lambda m: f"date_trunc('{m.group(1).lower()}'", sql)
             cursor.execute(sql)
         except Exception as ex:
             logger.exception(
